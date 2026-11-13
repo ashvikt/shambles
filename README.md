@@ -32,8 +32,9 @@ Other things it does:
 
 Good to know:
 
-- The fake location only lasts while Shambles is running and the iPhone is connected to the PC.
-  Close the black window or unplug the phone and it snaps back to the real location in a few seconds.
+- You need the PC to set or change the fake location. On some iPhones (seen on iOS 26) the last spot
+  stays in place after unplugging. To get the real location back, plug in and press Real GPS, or
+  restart the iPhone.
 - Nothing is installed on the iPhone and no Apple ID or password is used.
 - Apps and games can detect big jumps in location. Jumping across the world in one second is an easy way
   to get an account flagged.
