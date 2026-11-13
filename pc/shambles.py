@@ -137,6 +137,7 @@ class DeviceSession:
         self.name: Optional[str] = None
         self.version: Optional[str] = None
         self.sim: Any = None  # LocationSimulation or DtSimulateLocation
+        self.stage = "starting"
 
     @property
     def connected(self) -> bool:
@@ -149,9 +150,30 @@ class DeviceSession:
                 await asyncio.wait_for(stack.aclose(), 10)
 
     async def _open(self, udid: str) -> None:
+        """Connect, retrying a couple of times: Apple's USB service on Windows sometimes drops the
+        first connection right after the phone is plugged in or unlocked."""
+        last: Optional[BaseException] = None
+        for attempt in range(3):
+            self.stage = "starting"
+            try:
+                await self._open_once(udid)
+                return
+            except UserFacingError:
+                raise
+            except Exception as e:
+                last = e
+                log.exception("connect attempt %d failed while %s", attempt + 1, self.stage)
+                await asyncio.sleep(2)
+        raise UserFacingError(
+            f"Couldn't connect while {self.stage} ({type(last).__name__}: {last}). "
+            "Unlock the iPhone, close iTunes and iloader, unplug the cable, plug it back in, then press Try again."
+        )
+
+    async def _open_once(self, udid: str) -> None:
         await self.close()
         stack = AsyncExitStack()
         try:
+            self.stage = "talking to the iPhone over USB"
             try:
                 lockdown = await create_using_usbmux(serial=udid, autopair=True, pair_timeout=60)
             except (PairingDialogResponsePendingError, PasswordRequiredError):
@@ -167,6 +189,7 @@ class DeviceSession:
             self.version = lockdown.product_version
             ver = Version(self.version)
 
+            self.stage = "checking Developer Mode"
             if ver >= Version("16.0") and not await lockdown.get_developer_mode_status():
                 with contextlib.suppress(Exception):
                     await AmfiService(lockdown).reveal_developer_mode_option_in_ui()
@@ -179,13 +202,17 @@ class DeviceSession:
             if ver >= Version("17.0"):
                 from pymobiledevice3.remote.userspace_tunnel import UserspaceRsdTunnel
 
+                self.stage = "opening the developer tunnel"
                 tunnel = UserspaceRsdTunnel(serial=udid)
                 rsd = await tunnel.aopen()
                 stack.push_async_callback(tunnel.aclose)
+                self.stage = "setting up developer tools on the iPhone"
                 await self._mount(rsd)
+                self.stage = "starting the location service"
                 dvt = await stack.enter_async_context(DvtProvider(rsd))
                 self.sim = await stack.enter_async_context(LocationSimulation(dvt))
             else:
+                self.stage = "setting up developer tools on the iPhone"
                 await self._mount(lockdown)
                 self.sim = DtSimulateLocation(lockdown)
             self.stack, self.udid = stack, udid
@@ -659,7 +686,12 @@ async def on_shutdown():
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(message)s", datefmt="%H:%M:%S")
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s  %(message)s",
+        datefmt="%H:%M:%S",
+        handlers=[logging.StreamHandler(), logging.FileHandler(HERE / "shambles.log", mode="w", encoding="utf-8")],
+    )
     for noisy in ("pymobiledevice3", "uvicorn.access", "asyncio"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
     print()

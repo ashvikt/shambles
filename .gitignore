@@ -4,3 +4,4 @@ shambles-data.json
 *.tmp
 .DS_Store
 build/
+shambles.log

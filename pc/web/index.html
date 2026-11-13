@@ -22,6 +22,7 @@
   html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
     font: 15px/1.35 -apple-system, "Segoe UI", Roboto, system-ui, sans-serif; overflow: hidden; }
   #map { position: fixed; inset: 0; background: #0b1220; }
+  .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.95) contrast(.9); }
   .leaflet-control-attribution { background: rgba(11,18,32,.7) !important; color: #7f8ba0 !important; font-size: 10px; }
   .leaflet-control-attribution a { color: #9fb0c9 !important; }
   .leaflet-bar a { background: var(--panel); color: var(--text); border-color: var(--line); }
@@ -179,9 +180,9 @@
   // ---------- map ----------
   const map = L.map("map", { zoomControl: false, worldCopyJump: true }).setView([20, 0], 2);
   L.control.zoom({ position: "topright" }).addTo(map);
-  L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
-    maxZoom: 20, subdomains: "abcd",
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
   }).addTo(map);
   if (window.innerWidth < 620) document.querySelector(".leaflet-top.leaflet-right").style.marginTop = "70px";
 
