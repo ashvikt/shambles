@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+shambles-data.json
+*.tmp
+.DS_Store
+build/

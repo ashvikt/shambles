@@ -1,0 +1,438 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>Shambles</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon.svg">
+<link rel="apple-touch-icon" href="/icon.svg">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0b1220">
+<link rel="stylesheet" href="/vendor/leaflet.css">
+<style>
+  :root {
+    --bg: #0b1220; --panel: rgba(16, 24, 40, .94); --line: rgba(255,255,255,.09);
+    --text: #e8eef9; --dim: #93a1b8; --accent: #35d0c0; --accent-ink: #04211e;
+    --warn: #ffb454; --bad: #ff6b6b; --r: 16px;
+    --safe-b: env(safe-area-inset-bottom, 0px); --safe-t: env(safe-area-inset-top, 0px);
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 15px/1.35 -apple-system, "Segoe UI", Roboto, system-ui, sans-serif; overflow: hidden; }
+  #map { position: fixed; inset: 0; background: #0b1220; }
+  .leaflet-control-attribution { background: rgba(11,18,32,.7) !important; color: #7f8ba0 !important; font-size: 10px; }
+  .leaflet-control-attribution a { color: #9fb0c9 !important; }
+  .leaflet-bar a { background: var(--panel); color: var(--text); border-color: var(--line); }
+  .leaflet-bar a:hover { background: #1b2640; color: #fff; }
+  button { font: inherit; color: inherit; border: 0; cursor: pointer; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r);
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); box-shadow: 0 10px 30px rgba(0,0,0,.35); }
+
+  /* top */
+  #top { position: fixed; z-index: 1000; left: 12px; right: 12px; top: calc(12px + var(--safe-t));
+    max-width: 520px; margin: 0 auto; }
+  #searchbar { display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 14px; }
+  #q { flex: 1; min-width: 0; background: transparent; border: 0; outline: 0; color: var(--text); font: inherit; padding: 9px 0; }
+  #q::placeholder { color: var(--dim); }
+  #devbtn { display: flex; align-items: center; gap: 7px; padding: 8px 12px; border-radius: 12px;
+    background: rgba(255,255,255,.06); white-space: nowrap; max-width: 46%; overflow: hidden; text-overflow: ellipsis; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--bad); flex: none; }
+  .dot.ok { background: var(--accent); box-shadow: 0 0 0 4px rgba(53,208,192,.18); }
+  .dot.wait { background: var(--warn); animation: pulse 1s infinite; }
+  @keyframes pulse { 50% { opacity: .35; } }
+  #results { margin-top: 8px; overflow: hidden; display: none; max-height: 46vh; overflow-y: auto; }
+  .row { display: block; width: 100%; text-align: left; padding: 11px 14px; background: transparent;
+    border-bottom: 1px solid var(--line); }
+  .row:last-child { border-bottom: 0; }
+  .row:hover, .row:active { background: rgba(255,255,255,.06); }
+  .row small { display: block; color: var(--dim); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* bottom */
+  #bottom { position: fixed; z-index: 1000; left: 12px; right: 12px; bottom: calc(12px + var(--safe-b));
+    max-width: 520px; margin: 0 auto; display: flex; flex-direction: column; gap: 8px; }
+  #pin { padding: 12px 14px; display: none; }
+  #pin h3 { margin: 0; font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #pin .coords { color: var(--dim); font-size: 12.5px; margin: 2px 0 10px; font-variant-numeric: tabular-nums; }
+  .btns { display: flex; gap: 8px; }
+  .btn { flex: 1; padding: 11px 10px; border-radius: 12px; background: rgba(255,255,255,.08); font-weight: 600; }
+  .btn.primary { background: var(--accent); color: var(--accent-ink); }
+  .btn.danger { background: rgba(255,107,107,.16); color: #ffb3b3; }
+  .btn.small { flex: none; padding: 11px 14px; }
+  .btn:disabled { opacity: .45; cursor: default; }
+  #bar { padding: 10px 12px; }
+  #status { display: flex; align-items: center; gap: 9px; margin-bottom: 10px; min-height: 22px; }
+  #statustext { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #progress { height: 3px; background: rgba(255,255,255,.08); border-radius: 3px; margin: -4px 0 10px; display: none; }
+  #progress i { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 3px; transition: width .9s linear; }
+  #speeds { display: flex; gap: 6px; margin-bottom: 8px; }
+  .chip { flex: 1; padding: 8px 4px; border-radius: 10px; background: rgba(255,255,255,.06); font-size: 13px; text-align: center; }
+  .chip.on { background: rgba(53,208,192,.18); color: var(--accent); font-weight: 600; }
+  .chip small { display: block; color: var(--dim); font-size: 11px; font-weight: 400; }
+
+  /* joystick */
+  #joy { position: fixed; z-index: 999; right: 18px; bottom: calc(230px + var(--safe-b)); width: 132px; height: 132px;
+    border-radius: 50%; background: rgba(16,24,40,.72); border: 1px solid var(--line); display: none; touch-action: none;
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+  #joy::before { content: "N"; position: absolute; top: 5px; left: 0; right: 0; text-align: center; font-size: 11px; color: var(--dim); }
+  #knob { position: absolute; left: 50%; top: 50%; width: 54px; height: 54px; margin: -27px; border-radius: 50%;
+    background: var(--accent); box-shadow: 0 4px 14px rgba(53,208,192,.4); }
+
+  /* modal */
+  #veil { position: fixed; inset: 0; z-index: 2000; background: rgba(3,7,15,.6); display: none; align-items: flex-end; justify-content: center; }
+  #modal { width: 100%; max-width: 520px; max-height: 82vh; overflow-y: auto; border-radius: 20px 20px 0 0;
+    padding: 18px 16px calc(18px + var(--safe-b)); }
+  @media (min-width: 620px) { #veil { align-items: center; } #modal { border-radius: 20px; } }
+  #modal h2 { margin: 0 0 4px; font-size: 18px; }
+  #modal p { color: var(--dim); margin: 6px 0 12px; }
+  #modal .list { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; margin: 10px 0; }
+  #modal .sec { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--dim); margin: 16px 0 0; }
+  .rowx { display: flex; align-items: center; border-bottom: 1px solid var(--line); }
+  .rowx:last-child { border-bottom: 0; }
+  .rowx .row { border: 0; flex: 1; min-width: 0; }
+  .rowx .x { padding: 10px 14px; background: transparent; color: var(--dim); font-size: 17px; }
+  ol.steps { margin: 8px 0 12px; padding-left: 20px; color: var(--text); }
+  ol.steps li { margin: 6px 0; }
+  .err { background: rgba(255,107,107,.12); border: 1px solid rgba(255,107,107,.3); color: #ffc9c9; padding: 10px 12px; border-radius: 12px; margin: 10px 0; }
+  .qr { background: #fff; border-radius: 14px; padding: 10px; width: max-content; margin: 12px auto; }
+  .qr svg { display: block; }
+  .url { word-break: break-all; font-size: 13px; color: var(--accent); text-align: center; user-select: all; }
+  #toast { position: fixed; z-index: 3000; left: 50%; top: calc(74px + var(--safe-t)); transform: translateX(-50%);
+    padding: 10px 14px; border-radius: 12px; background: #2a1620; border: 1px solid rgba(255,107,107,.4); color: #ffd0d0;
+    max-width: min(92vw, 480px); display: none; }
+  #toast.good { background: #10261f; border-color: rgba(53,208,192,.4); color: #c9fff7; }
+  .pinicon { width: 26px; height: 26px; border-radius: 50% 50% 50% 0; background: #ff8a4c; transform: rotate(-45deg);
+    border: 3px solid #fff; box-shadow: 0 3px 10px rgba(0,0,0,.45); }
+  .meicon { width: 20px; height: 20px; border-radius: 50%; background: var(--accent); border: 3px solid #fff;
+    box-shadow: 0 0 0 8px rgba(53,208,192,.25), 0 2px 8px rgba(0,0,0,.5); }
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<div id="top">
+  <div id="searchbar" class="panel">
+    <input id="q" type="search" placeholder="Search a place or paste lat, lon" autocomplete="off" enterkeyhint="search">
+    <button id="devbtn" title="iPhone connection"><span id="devdot" class="dot"></span><span id="devname">No iPhone</span></button>
+  </div>
+  <div id="results" class="panel"></div>
+</div>
+
+<div id="joy"><div id="knob"></div></div>
+
+<div id="bottom">
+  <div id="pin" class="panel">
+    <h3 id="pinlabel">Dropped pin</h3>
+    <div class="coords" id="pincoords"></div>
+    <div class="btns">
+      <button class="btn primary" id="tp">Teleport</button>
+      <button class="btn" id="go">Move there</button>
+      <button class="btn small" id="fav" title="Save to favorites">&#9733;</button>
+      <button class="btn small" id="pinclose" title="Close">&#10005;</button>
+    </div>
+  </div>
+  <div id="bar" class="panel">
+    <div id="status"><span id="sdot" class="dot"></span><span id="statustext">Real location</span></div>
+    <div id="progress"><i></i></div>
+    <div id="speeds"></div>
+    <div class="btns">
+      <button class="btn" id="places">Places</button>
+      <button class="btn" id="joybtn">Joystick</button>
+      <button class="btn" id="pause" style="display:none">Pause</button>
+      <button class="btn danger" id="reset">Real GPS</button>
+    </div>
+  </div>
+</div>
+
+<div id="veil"><div id="modal" class="panel"></div></div>
+<div id="toast"></div>
+
+<script src="/vendor/leaflet.js"></script>
+<script src="/vendor/qrcode.js"></script>
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const params = new URLSearchParams(location.search);
+  let token = params.get("t") || "";
+  try { if (token) localStorage.setItem("shambles_token", token); else token = localStorage.getItem("shambles_token") || ""; } catch (e) {}
+
+  async function api(path, body, method) {
+    const opt = { method: method || (body ? "POST" : "GET"), headers: { "x-shambles-token": token } };
+    if (body) { opt.headers["content-type"] = "application/json"; opt.body = JSON.stringify(body); }
+    let res;
+    try { res = await fetch(path, opt); }
+    catch (e) { throw new Error("Can't reach Shambles on the PC. Is it still running?"); }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.ok === false) throw new Error(data.error || "Something went wrong (" + res.status + ")");
+    return data;
+  }
+
+  let toastTimer;
+  function toast(msg, good) {
+    const t = $("toast");
+    t.textContent = msg; t.className = good ? "good" : ""; t.style.display = "block";
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => (t.style.display = "none"), good ? 2200 : 6000);
+  }
+
+  // ---------- map ----------
+  const map = L.map("map", { zoomControl: false, worldCopyJump: true }).setView([20, 0], 2);
+  L.control.zoom({ position: "topright" }).addTo(map);
+  L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
+    maxZoom: 20, subdomains: "abcd",
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+  }).addTo(map);
+  if (window.innerWidth < 620) document.querySelector(".leaflet-top.leaflet-right").style.marginTop = "70px";
+
+  const pinMarker = L.marker([0, 0], { icon: L.divIcon({ className: "", html: '<div class="pinicon"></div>', iconSize: [26, 26], iconAnchor: [13, 30] }) });
+  const meMarker = L.marker([0, 0], { icon: L.divIcon({ className: "", html: '<div class="meicon"></div>', iconSize: [20, 20], iconAnchor: [10, 10] }), interactive: false, zIndexOffset: 500 });
+  const routeLine = L.polyline([], { color: "#35d0c0", weight: 4, opacity: .85 });
+  let pin = null, state = { mode: "idle", position: null }, device = { connected: false }, firstFix = true;
+
+  function setPin(lat, lon, label) {
+    lon = ((lon + 540) % 360) - 180;
+    pin = { lat, lon, label: label || "Dropped pin" };
+    pinMarker.setLatLng([lat, lon]).addTo(map);
+    $("pinlabel").textContent = pin.label;
+    $("pincoords").textContent = lat.toFixed(6) + ", " + lon.toFixed(6);
+    $("pin").style.display = "block";
+  }
+  function clearPin() { pin = null; pinMarker.remove(); $("pin").style.display = "none"; }
+  map.on("click", (e) => { hideResults(); setPin(e.latlng.lat, e.latlng.lng); });
+  $("pinclose").onclick = clearPin;
+
+  // ---------- speeds ----------
+  const SPEEDS = [["Walk", 1.4, "3 mph"], ["Jog", 3, "7 mph"], ["Bike", 5.5, "12 mph"], ["Drive", 13.4, "30 mph"], ["Fast", 29, "65 mph"]];
+  let speed = 1.4;
+  try { speed = parseFloat(localStorage.getItem("shambles_speed")) || 1.4; } catch (e) {}
+  function drawSpeeds() {
+    $("speeds").innerHTML = SPEEDS.map(([n, v, s]) => `<button class="chip${v === speed ? " on" : ""}" data-v="${v}">${n}<small>${s}</small></button>`).join("");
+  }
+  $("speeds").onclick = (e) => {
+    const b = e.target.closest(".chip"); if (!b) return;
+    speed = parseFloat(b.dataset.v); try { localStorage.setItem("shambles_speed", speed); } catch (e2) {}
+    drawSpeeds();
+  };
+  drawSpeeds();
+
+  // ---------- actions ----------
+  function needDevice() {
+    if (device.connected) return false;
+    openDevice(); return true;
+  }
+  async function busy(btn, fn) {
+    btn.disabled = true;
+    try { await fn(); } catch (e) { toast(e.message); } finally { btn.disabled = false; }
+  }
+  $("tp").onclick = () => { if (!pin || needDevice()) return; busy($("tp"), async () => {
+    apply(await api("/api/teleport", { lat: pin.lat, lon: pin.lon, label: pin.label === "Dropped pin" ? null : pin.label }));
+    routeLine.remove(); toast("Teleported", true); clearPin();
+  }); };
+
+  $("go").onclick = () => { if (!pin || needDevice()) return; busy($("go"), async () => {
+    if (!state.position) throw new Error("Teleport somewhere first. Then you can move from there.");
+    const from = state.position, to = [pin.lat, pin.lon];
+    let pts = [from, to];
+    try {
+      const prof = speed <= 3.5 ? "foot" : "driving";
+      const base = prof === "foot" ? "https://routing.openstreetmap.de/routed-foot/route/v1/foot/" : "https://router.project-osrm.org/route/v1/driving/";
+      const r = await fetch(`${base}${from[1]},${from[0]};${to[1]},${to[0]}?overview=full&geometries=geojson`);
+      const j = await r.json();
+      const c = j.routes && j.routes[0] && j.routes[0].geometry.coordinates;
+      if (c && c.length > 1) pts = [from, ...c.map(([x, y]) => [y, x]), to];
+    } catch (e) { toast("Couldn't get a road route, going in a straight line."); }
+    apply(await api("/api/route", { points: pts, speed, loop: false }));
+    routeLine.setLatLngs(pts).addTo(map);
+    map.fitBounds(routeLine.getBounds(), { padding: [60, 60], paddingBottomRight: [60, 260] });
+    clearPin();
+  }); };
+
+  $("fav").onclick = () => { if (!pin) return;
+    const name = prompt("Name this place", pin.label === "Dropped pin" ? "" : pin.label);
+    if (!name) return;
+    api("/api/favorites", { lat: pin.lat, lon: pin.lon, label: name.trim().slice(0, 60) }).then(() => toast("Saved", true)).catch((e) => toast(e.message));
+  };
+
+  $("reset").onclick = () => busy($("reset"), async () => {
+    apply(await api("/api/reset", {})); routeLine.remove(); setJoy(false);
+    toast("Back to your real location", true);
+  });
+  $("pause").onclick = () => busy($("pause"), async () => {
+    if (state.mode === "route") apply(await api("/api/pause", { paused: !state.paused }));
+  });
+
+  // ---------- status ----------
+  function apply(s) {
+    if (!s) return;
+    state = Object.assign(state, s);
+    if (s.device) {
+      device = s.device;
+      $("devdot").className = "dot" + (device.connected ? " ok" : connecting ? " wait" : "");
+      $("devname").textContent = device.connected ? (device.name || "iPhone") : connecting ? "Connecting" : "No iPhone";
+    }
+    const p = state.position;
+    if (p) {
+      meMarker.setLatLng(p).addTo(map);
+      if (firstFix) { firstFix = false; map.setView(p, 16); }
+    } else meMarker.remove();
+    const txt = { idle: "Real location", holding: "Fake location is on", route: state.paused ? "Paused" : "Moving", joystick: "Joystick" }[state.mode] || state.mode;
+    let extra = "";
+    if (state.mode === "route" && state.route_progress != null) {
+      const left = Math.max(0, state.route_total_m * (1 - state.route_progress));
+      extra = "  ·  " + (left > 1609 ? (left / 1609.34).toFixed(1) + " mi left" : Math.round(left * 3.281) + " ft left");
+    }
+    $("statustext").textContent = txt + extra + (state.error ? "  ·  connection problem, retrying" : "");
+    $("sdot").className = "dot" + (state.mode === "idle" ? "" : state.error ? " wait" : " ok");
+    $("progress").style.display = state.mode === "route" ? "block" : "none";
+    $("progress").firstElementChild.style.width = Math.min(100, (state.route_progress || 0) * 100) + "%";
+    $("pause").style.display = state.mode === "route" ? "" : "none";
+    $("pause").textContent = state.paused ? "Resume" : "Pause";
+    if (state.mode !== "route" && state.mode !== "joystick") routeLine.remove();
+  }
+  async function poll() {
+    try { apply(await api("/api/status")); } catch (e) {}
+    setTimeout(poll, document.hidden ? 4000 : 1000);
+  }
+
+  // ---------- search ----------
+  let searchTimer, searchSeq = 0;
+  function hideResults() { $("results").style.display = "none"; }
+  function showResults(items) {
+    const box = $("results");
+    if (!items.length) { box.innerHTML = '<div class="row" style="color:var(--dim)">No results</div>'; box.style.display = "block"; return; }
+    box.innerHTML = items.map((it, i) => `<button class="row" data-i="${i}">${esc(it.title)}<small>${esc(it.sub || "")}</small></button>`).join("");
+    box.style.display = "block";
+    box.onclick = (e) => {
+      const b = e.target.closest("[data-i]"); if (!b) return;
+      const it = items[+b.dataset.i];
+      hideResults(); $("q").blur();
+      map.setView([it.lat, it.lon], 16); setPin(it.lat, it.lon, it.title);
+    };
+  }
+  async function search(text) {
+    text = text.trim(); if (!text) return hideResults();
+    const m = text.match(/^\s*(-?\d{1,2}(?:\.\d+)?)\s*[, ]\s*(-?\d{1,3}(?:\.\d+)?)\s*$/);
+    if (m && Math.abs(+m[1]) <= 90 && Math.abs(+m[2]) <= 180) return showResults([{ title: `${+m[1]}, ${+m[2]}`, sub: "Coordinates", lat: +m[1], lon: +m[2] }]);
+    const seq = ++searchSeq;
+    try {
+      const r = await fetch("https://nominatim.openstreetmap.org/search?format=jsonv2&limit=7&q=" + encodeURIComponent(text), { headers: { "Accept-Language": navigator.language || "en" } });
+      const j = await r.json();
+      if (seq !== searchSeq) return;
+      showResults(j.map((x) => { const parts = x.display_name.split(", "); return { title: parts[0], sub: parts.slice(1).join(", "), lat: +x.lat, lon: +x.lon }; }));
+    } catch (e) { if (seq === searchSeq) toast("Search isn't working right now. Check the internet connection."); }
+  }
+  $("q").addEventListener("input", () => { clearTimeout(searchTimer); searchTimer = setTimeout(() => search($("q").value), 650); });
+  $("q").addEventListener("keydown", (e) => { if (e.key === "Enter") { clearTimeout(searchTimer); search($("q").value); } });
+
+  // ---------- joystick ----------
+  let joyOn = false, joyActive = false, joyHeading = 0, joyTimer = null;
+  function setJoy(on) {
+    joyOn = on; $("joy").style.display = on ? "block" : "none"; $("joybtn").classList.toggle("primary", on);
+    if (!on) { joyActive = false; clearInterval(joyTimer); joyTimer = null; if (state.mode === "joystick") api("/api/stop", {}).then(apply).catch(() => {}); }
+  }
+  $("joybtn").onclick = () => {
+    if (!joyOn) { if (needDevice()) return; if (!state.position) return toast("Teleport somewhere first. Then the joystick moves you from there."); }
+    setJoy(!joyOn);
+  };
+  function sendJoy() { api("/api/joystick", { active: joyActive, heading: joyHeading, speed }).then(apply).catch((e) => { toast(e.message); }); }
+  function joyMove(e) {
+    const r = $("joy").getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    let dx = e.clientX - cx, dy = e.clientY - cy; const d = Math.hypot(dx, dy), max = r.width / 2 - 27;
+    if (d > max) { dx *= max / d; dy *= max / d; }
+    $("knob").style.transform = `translate(${dx}px,${dy}px)`;
+    joyActive = d > 10; joyHeading = (Math.atan2(dx, -dy) * 180 / Math.PI + 360) % 360;
+  }
+  $("joy").addEventListener("pointerdown", (e) => { $("joy").setPointerCapture(e.pointerId); joyMove(e); sendJoy(); clearInterval(joyTimer); joyTimer = setInterval(sendJoy, 400); });
+  $("joy").addEventListener("pointermove", (e) => { if (e.buttons || e.pointerType === "touch") if (joyTimer) joyMove(e); });
+  const joyEnd = () => { clearInterval(joyTimer); joyTimer = null; joyActive = false; $("knob").style.transform = ""; sendJoy(); };
+  $("joy").addEventListener("pointerup", joyEnd); $("joy").addEventListener("pointercancel", joyEnd);
+
+  // ---------- modal ----------
+  function openModal(html) { $("modal").innerHTML = html; $("veil").style.display = "flex"; }
+  function closeModal() { $("veil").style.display = "none"; devOpen = false; }
+  $("veil").addEventListener("click", (e) => { if (e.target === $("veil")) closeModal(); });
+
+  // places
+  $("places").onclick = async () => {
+    let d; try { d = await api("/api/places"); } catch (e) { return toast(e.message); }
+    const row = (p, i, fav) => `<div class="rowx"><button class="row" data-lat="${p.lat}" data-lon="${p.lon}" data-label="${esc(p.label)}">${esc(p.label)}<small>${(+p.lat).toFixed(5)}, ${(+p.lon).toFixed(5)}</small></button>${fav ? `<button class="x" data-del="${i}" title="Remove">&#10005;</button>` : ""}</div>`;
+    openModal(`<h2>Places</h2>
+      <div class="sec">Favorites</div>
+      ${d.favorites.length ? `<div class="list">${d.favorites.map((p, i) => row(p, i, true)).join("")}</div>` : "<p>Nothing saved yet. Tap the map, then the star.</p>"}
+      <div class="sec">Recent</div>
+      ${d.recents.length ? `<div class="list">${d.recents.map((p, i) => row(p, i, false)).join("")}</div>` : "<p>Places you teleport to show up here.</p>"}
+      <div class="btns"><button class="btn" id="mclose">Close</button></div>`);
+    $("mclose").onclick = closeModal;
+    $("modal").onclick = async (e) => {
+      const del = e.target.closest("[data-del]");
+      if (del) { await api("/api/favorites/" + del.dataset.del, null, "DELETE").catch(() => {}); return $("places").onclick(); }
+      const b = e.target.closest("[data-lat]"); if (!b) return;
+      closeModal(); map.setView([+b.dataset.lat, +b.dataset.lon], 16); setPin(+b.dataset.lat, +b.dataset.lon, b.dataset.label);
+    };
+  };
+
+  // device
+  let connecting = false, devOpen = false, lastDevError = "", info = { local: false };
+  async function connect(udid) {
+    connecting = true; lastDevError = ""; apply({ device }); if (devOpen) renderDevice();
+    try {
+      const r = await api("/api/select", { udid });
+      device = { connected: true, name: r.name, version: r.version, udid };
+      apply({ device }); toast("Connected to " + (r.name || "iPhone"), true);
+      if (devOpen) closeModal();
+    } catch (e) { lastDevError = e.message; }
+    connecting = false; apply({ device }); if (devOpen) renderDevice();
+  }
+  let devList = [];
+  async function refreshDevices(auto) {
+    try { const d = await api("/api/devices"); devList = d.devices || []; if (d.error) lastDevError = d.error; } catch (e) { lastDevError = e.message; devList = []; }
+    if (auto && !device.connected && !connecting && !lastDevError && devList.length === 1) connect(devList[0].udid);
+    if (devOpen) renderDevice();
+  }
+  function renderDevice() {
+    const phoneBtn = info.local ? `<button class="btn" id="mphone">Control from my phone</button>` : "";
+    let body;
+    if (connecting) body = `<p><span class="dot wait" style="display:inline-block"></span>&nbsp; Connecting. The first time can take a minute or two. Keep the iPhone unlocked, and tap <b>Trust</b> if it asks.</p>`;
+    else if (device.connected) body = `<p><span class="dot ok" style="display:inline-block"></span>&nbsp; Connected to <b>${esc(device.name || "iPhone")}</b> (iOS ${esc(device.version || "?")}). Keep it plugged in while the fake location is on.</p>`;
+    else if (!devList.length) body = `<p>No iPhone found yet.</p><ol class="steps"><li>Plug the iPhone into this PC with a USB cable.</li><li>Unlock it and tap <b>Trust</b>, then enter the passcode.</li><li>If it never shows up, open iTunes once and check the phone appears there.</li></ol>`;
+    else body = `<p>Pick the iPhone to control:</p><div class="list">${devList.map((d) => `<button class="row" data-udid="${esc(d.udid)}">${esc(d.name || "iPhone")}<small>${esc(d.connection)} · ${esc(d.udid)}</small></button>`).join("")}</div>`;
+    openModal(`<h2>iPhone</h2>${lastDevError && !connecting ? `<div class="err">${esc(lastDevError)}</div>` : ""}${body}
+      <div class="btns">${!device.connected && !connecting ? `<button class="btn primary" id="mretry">Try again</button>` : ""}${phoneBtn}<button class="btn" id="mclose">Close</button></div>`);
+    devOpen = true;
+    $("mclose").onclick = closeModal;
+    if ($("mretry")) $("mretry").onclick = () => { lastDevError = ""; refreshDevices(true); };
+    if ($("mphone")) $("mphone").onclick = openPhone;
+    $("modal").onclick = (e) => { const b = e.target.closest("[data-udid]"); if (b) connect(b.dataset.udid); };
+  }
+  function openDevice() { devOpen = true; renderDevice(); refreshDevices(true); }
+  $("devbtn").onclick = openDevice;
+
+  function openPhone() {
+    let qr = "";
+    try { const q = qrcode(0, "M"); q.addData(info.phone_url); q.make(); qr = `<div class="qr">${q.createSvgTag({ cellSize: 5, margin: 1 })}</div>`; } catch (e) {}
+    openModal(`<h2>Control from a phone</h2>
+      <p>Put the phone on the same Wi-Fi as this PC, then scan this with its camera. In Safari, tap Share, then Add to Home Screen to keep it like an app.</p>
+      ${qr}<div class="url">${esc(info.phone_url)}</div>
+      <p style="margin-top:12px">If the page doesn't load, Windows Firewall is probably blocking it. Allow Python on private networks when Windows asks.</p>
+      <div class="btns"><button class="btn" id="mclose">Close</button></div>`);
+    devOpen = false; $("mclose").onclick = closeModal; $("modal").onclick = null;
+  }
+
+  // ---------- start ----------
+  (async () => {
+    try { info = await api("/api/info"); } catch (e) { toast(e.message); }
+    try { const s = await api("/api/status"); apply(s); } catch (e) {}
+    if (!state.position) {
+      try { const d = await api("/api/places"); if (d.recents[0]) map.setView([d.recents[0].lat, d.recents[0].lon], 13); } catch (e) {}
+      if (navigator.geolocation && window.isSecureContext) navigator.geolocation.getCurrentPosition((p) => { if (!state.position) map.setView([p.coords.latitude, p.coords.longitude], 14); }, () => {}, { timeout: 5000 });
+    }
+    await refreshDevices(true);
+    if (!device.connected && !connecting) openDevice();
+    setInterval(() => { if (!device.connected && !connecting) refreshDevices(true); }, 3500);
+    poll();
+  })();
+})();
+</script>
+</body>
+</html>

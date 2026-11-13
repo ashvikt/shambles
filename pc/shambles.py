@@ -33,6 +33,7 @@ from typing import Any, Optional
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from packaging.version import Version
 from pydantic import BaseModel
 
@@ -221,12 +222,19 @@ class DeviceSession:
                     if attempt == 2:
                         raise
 
-    async def clear(self) -> None:
+    async def clear(self, disconnect: bool = False) -> None:
+        """Go back to the real location. Keeps the connection for the next teleport unless the
+        clear itself failed (closing the connection also drops the fake location on iOS 17+)."""
         async with self.lock:
+            ok = False
             if self.sim is not None:
-                with contextlib.suppress(Exception):
+                try:
                     await asyncio.wait_for(self.sim.clear(), 10)
-            await self.close()
+                    ok = True
+                except Exception as e:
+                    log.warning("clear failed (%r), dropping the connection instead", e)
+            if disconnect or not ok:
+                await self.close()
 
 
 # ---------------------------------------------------------------------------------------------
@@ -359,11 +367,11 @@ class Mover:
         self._cancel()
         self.mode = "holding" if self.position else "idle"
 
-    async def reset(self) -> None:
+    async def reset(self, disconnect: bool = False) -> None:
         self._cancel()
         self.mode = "idle"
         self.position = None
-        await self.session.clear()
+        await self.session.clear(disconnect)
 
     def status(self) -> dict[str, Any]:
         return {
@@ -391,6 +399,7 @@ data.setdefault("recents", [])
 session = DeviceSession()
 mover = Mover(session)
 app = FastAPI(title="Shambles")
+app.mount("/vendor", StaticFiles(directory=WEB / "vendor"), name="vendor")
 
 
 def is_local(request: Request) -> bool:
@@ -470,7 +479,7 @@ class SelectBody(BaseModel):
 async def select(body: SelectBody):
     async def go():
         if mover.udid != body.udid:
-            await mover.reset()
+            await mover.reset(disconnect=True)
         mover.udid = body.udid
         async with session.lock:
             await session.ensure(body.udid)
@@ -599,7 +608,7 @@ async def on_startup():
 @app.on_event("shutdown")
 async def on_shutdown():
     with contextlib.suppress(Exception):
-        await mover.reset()
+        await mover.reset(disconnect=True)
 
 
 def main() -> None:
