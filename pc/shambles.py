@@ -20,6 +20,7 @@ import json
 import logging
 import math
 import os
+import plistlib
 import random
 import secrets
 import socket
@@ -48,6 +49,8 @@ from pymobiledevice3.exceptions import (
 from pymobiledevice3.lockdown import create_using_usbmux
 from pymobiledevice3.services.amfi import AmfiService
 from pymobiledevice3.services.dvt.instruments.dvt_provider import DvtProvider
+from pymobiledevice3.services.house_arrest import HouseArrestService
+from pymobiledevice3.services.installation_proxy import InstallationProxyService
 from pymobiledevice3.services.dvt.instruments.location_simulation import LocationSimulation
 from pymobiledevice3.services.mobile_image_mounter import auto_mount
 from pymobiledevice3.services.simulate_location import DtSimulateLocation
@@ -498,6 +501,50 @@ async def reveal(body: SelectBody):
         ld = await create_using_usbmux(serial=body.udid, autopair=True, pair_timeout=60)
         try:
             await AmfiService(ld).reveal_developer_mode_option_in_ui()
+        finally:
+            await ld.close()
+
+    return await run(go())
+
+
+@app.post("/api/place-pairing")
+async def place_pairing(request: Request):
+    """Copy a pairing file (exported from iloader) into the Shambles iPhone app over USB."""
+    if not is_local(request):
+        return JSONResponse({"ok": False, "error": "Do this from the PC, not from a phone."}, 403)
+    body = await request.body()
+
+    async def go():
+        if not body or len(body) > 2_000_000:
+            raise UserFacingError("That doesn't look like a pairing file.")
+        try:
+            if not isinstance(plistlib.loads(body), dict):
+                raise ValueError
+        except Exception:
+            raise UserFacingError("That doesn't look like a pairing file. In iloader use Manage Pairing File, then Export.")
+        udid = mover.udid
+        if udid is None:
+            found = {d.serial for d in await usbmux.list_devices()}
+            if len(found) != 1:
+                raise UserFacingError("Plug in exactly one iPhone first.")
+            udid = found.pop()
+        ld = await create_using_usbmux(serial=udid, autopair=True, pair_timeout=60)
+        try:
+            apps = await InstallationProxyService(lockdown=ld).get_apps(application_type="User")
+            bundle = next(
+                (
+                    b
+                    for b, a in apps.items()
+                    if a.get("CFBundleDisplayName") == "Shambles" or "shambles" in b.lower()
+                ),
+                None,
+            )
+            if bundle is None:
+                raise UserFacingError("The Shambles app isn't on this iPhone yet. Install it first, then try again.")
+            async with await HouseArrestService.create(ld, bundle, documents_only=True) as ha:
+                with contextlib.suppress(Exception):
+                    await ha.makedirs("Documents")
+                await ha.set_file_contents("Documents/pairingFile.plist", body)
         finally:
             await ld.close()
 

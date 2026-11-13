@@ -392,14 +392,27 @@
   }
   function renderDevice() {
     const phoneBtn = info.local ? `<button class="btn" id="mphone">Control from my phone</button>` : "";
+    const appSetup = info.local ? `<div class="sec">Shambles iPhone app</div><p>Using the phone app instead? After installing it, export a pairing file from iloader (Manage Pairing File, then Export) and send it to the app here.</p><div class="btns"><button class="btn" id="mpair">Send pairing file to the app</button></div><input type="file" id="pairfile" style="display:none">` : "";
     let body;
     if (connecting) body = `<p><span class="dot wait" style="display:inline-block"></span>&nbsp; Connecting. The first time can take a minute or two. Keep the iPhone unlocked, and tap <b>Trust</b> if it asks.</p>`;
     else if (device.connected) body = `<p><span class="dot ok" style="display:inline-block"></span>&nbsp; Connected to <b>${esc(device.name || "iPhone")}</b> (iOS ${esc(device.version || "?")}). Keep it plugged in while the fake location is on.</p>`;
     else if (!devList.length) body = `<p>No iPhone found yet.</p><ol class="steps"><li>Plug the iPhone into this PC with a USB cable.</li><li>Unlock it and tap <b>Trust</b>, then enter the passcode.</li><li>If it never shows up, open iTunes once and check the phone appears there.</li></ol>`;
     else body = `<p>Pick the iPhone to control:</p><div class="list">${devList.map((d) => `<button class="row" data-udid="${esc(d.udid)}">${esc(d.name || "iPhone")}<small>${esc(d.connection)} · ${esc(d.udid)}</small></button>`).join("")}</div>`;
     openModal(`<h2>iPhone</h2>${lastDevError && !connecting ? `<div class="err">${esc(lastDevError)}</div>` : ""}${body}
-      <div class="btns">${!device.connected && !connecting ? `<button class="btn primary" id="mretry">Try again</button>` : ""}${phoneBtn}<button class="btn" id="mclose">Close</button></div>`);
+      <div class="btns">${!device.connected && !connecting ? `<button class="btn primary" id="mretry">Try again</button>` : ""}${phoneBtn}<button class="btn" id="mclose">Close</button></div>${appSetup}`);
     devOpen = true;
+    if ($("mpair")) {
+      $("mpair").onclick = () => $("pairfile").click();
+      $("pairfile").onchange = async () => {
+        const f = $("pairfile").files[0]; if (!f) return;
+        try {
+          const res = await fetch("/api/place-pairing", { method: "POST", headers: { "content-type": "application/octet-stream" }, body: await f.arrayBuffer() });
+          const d = await res.json().catch(() => ({}));
+          if (!res.ok || d.ok === false) throw new Error(d.error || "Couldn't send the file.");
+          toast("Pairing file sent. Open Shambles on the iPhone.", true);
+        } catch (e) { toast(e.message); }
+      };
+    }
     $("mclose").onclick = closeModal;
     if ($("mretry")) $("mretry").onclick = () => { lastDevError = ""; refreshDevices(true); };
     if ($("mphone")) $("mphone").onclick = openPhone;

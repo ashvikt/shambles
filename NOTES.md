@@ -2,23 +2,17 @@
 
 Goal: a Vanish-style GPS changer for iPhone (iOS 26.x), owner on a Windows PC.
 
-## Two parts
-1. **PC helper** (`pc/`): Python + pymobiledevice3 (v11.55). No app on the phone, no Apple ID.
-   Phone needs: Trust this PC + Developer Mode. Uses the no-admin userspace RSD tunnel
-   (`UserspaceRsdTunnel`) -> `auto_mount(rsd)` -> `DvtProvider` -> `LocationSimulation`.
-   iOS 17+ resets the location when the DVT channel closes, so the process must stay running.
-   Serves a map UI (FastAPI) on port 8765; phones on the same Wi-Fi use `/?t=<token>`.
-   - DONE: `pc/shambles.py` (device session, teleport, route-follow, joystick, favorites/recents, token auth).
-   - TODO: `pc/web/index.html` (Leaflet map, Nominatim search, OSRM routes, joystick, QR for phone URL),
-     `pc/web/manifest.webmanifest`, `pc/web/icon.svg`, `pc/requirements.txt` (pymobiledevice3),
-     `pc/Start Shambles.bat` (find Python, make .venv, pip install, run), README.
-2. **iPhone app** (`ios/`): works without the PC after one-time setup.
-   Pairing file (from iloader / idevice_pair) + LocalDevVPN loopback tunnel + idevice FFI
-   (MIT, jkcoxson/idevice) for RSD tunnel, DDI mount, DVT location simulation. SwiftUI + MapKit.
-   Built unsigned by GitHub Actions (macos runner), installed with SideStore.
-   Prior art: StikDebug, RouteSim (github.com/DasVR/RouteSim), Locus.
-   - TODO: everything.
+## Status (2026-11-13)
+- **PC helper** (`pc/`): complete, tested only against a mocked device. `shambles.py` (FastAPI, pymobiledevice3 11.55.0
+  pinned), `web/index.html` (Leaflet, vendored), `Start Shambles.bat`. Also pushes an iloader-exported pairing file
+  into the iPhone app's Documents (`/api/place-pairing`).
+- **iPhone app** (`ios/`): modified copy of StikDebug (AGPL-3.0, see `ios/NOTICE.md`). Xcode target and scheme are
+  still named `StikDebug`; only display name, bundle id (`com.ashvikt.shambles`), icon, tabs and a few strings changed.
+  Uses the Xcode 27 JSON project format, so CI runs on the `xcode-27` runner.
+  `.github/workflows/build-ios.yml` builds an unsigned IPA and republishes it as release tag `latest`.
+  First build passed. Not yet installed on a real phone.
+- **Not done / ideas**: joystick in the phone app, a SideStore source JSON for one-tap install and updates,
+  packaging the PC helper as a single .exe.
 
 ## Owner setup status
-- iTunes + iloader installed on PC. SideStore not yet installed. LocalDevVPN status unknown.
-- Developer Mode toggle not visible yet (appears after sideloading or via AMFI reveal).
+- iTunes + iloader installed on the Windows PC. SideStore not yet installed. iPhone on iOS 26.x.

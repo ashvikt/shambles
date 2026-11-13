@@ -7,7 +7,7 @@ Change where your iPhone thinks it is. Two ways to use it:
 | Needs a computer | Yes, the whole time | Only once, for setup |
 | App installed on the iPhone | No | Yes (sideloaded) |
 | Apple ID needed | No | Yes, to sign the app |
-| Status | Working | In progress |
+| Status | Built, needs real-phone testing | Built, needs real-phone testing |
 
 ## PC helper (Windows)
 
@@ -37,6 +37,38 @@ Good to know:
 - Nothing is installed on the iPhone and no Apple ID or password is used.
 - Apps and games can detect big jumps in location. Jumping across the world in one second is an easy way
   to get an account flagged.
+
+## iPhone app
+
+Works without the PC after a one-time setup. Needs iOS 17.4 or newer.
+
+Download: [Shambles.ipa](https://github.com/ashvikt/shambles/releases/download/latest/Shambles.ipa)
+(rebuilt automatically every time the code in `ios/` changes).
+
+One-time setup, with the iPhone plugged into the PC:
+
+1. On the iPhone, install **LocalDevVPN** from the App Store, open it, and tap Connect.
+   It is not a real VPN. It lets the phone talk to its own developer service.
+2. On the PC, open **iloader**, sign in with an Apple ID, and install **SideStore**.
+3. On the iPhone, turn on **Developer Mode** (Settings, Privacy & Security, Developer Mode), restart,
+   then trust your Apple ID under Settings, General, VPN & Device Management.
+4. Install the app: open the download link above in Safari on the iPhone, then in SideStore go to
+   My Apps, tap +, and pick `Shambles.ipa`.
+5. Give the app its pairing file: in iloader choose Manage Pairing File, then Export, and save the file.
+   Then run the PC helper, click the iPhone button, and choose **Send pairing file to the app**.
+   (Or move the file to the phone yourself and use Settings, Import Pairing File inside Shambles.)
+6. Open Shambles on the iPhone with LocalDevVPN connected and Wi-Fi on. When it says connected,
+   tap the map and start the simulation. After that it keeps working away from the PC.
+
+Good to know:
+
+- With a free Apple ID the app expires every 7 days. SideStore renews it by itself as long as
+  LocalDevVPN is connected now and then.
+- A big iOS update or a passcode change can break the pairing file. Redo step 5 if the app stops connecting.
+- Restarting the iPhone always brings back the real location.
+
+The iPhone app is a modified copy of [StikDebug](https://github.com/StikDebug/StikDebug) and is licensed
+under AGPL-3.0. See `ios/NOTICE.md`.
 
 ## How it works
 
