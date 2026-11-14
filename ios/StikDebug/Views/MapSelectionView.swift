@@ -1073,6 +1073,8 @@ struct LocationSimulationView: View {
             importCoordinates(result)
         }
         .onAppear {
+            // Shambles: the map is the first screen, so it is what starts the device connection.
+            startTunnelInBackground()
             loadBookmarks()
             if let routeCoordinates = simulationSession.routeCoordinates {
                 coordinate = nil
